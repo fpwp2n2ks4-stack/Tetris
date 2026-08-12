@@ -1,3 +1,7 @@
+// Définitions des pièces : les sept tétrominos, la taille de leur boîte
+// englobante, leur grille d'occupation à la rotation 0, ainsi que les tables
+// de wall-kick SRS. Aucune donnée d'état n'est stockée ici.
+
 #pragma once
 
 #include <utility>
@@ -5,9 +9,11 @@
 
 namespace tetris {
 
+// Taille de la grille de jeu (20 rangées x 10 colonnes).
 constexpr int kRows = 20;
 constexpr int kCols = 10;
 
+// Les sept types de pièces du tétromino standard.
 enum class PieceType : int {
     I = 0,
     O = 1,
@@ -18,8 +24,10 @@ enum class PieceType : int {
     L = 6,
 };
 
+// Nombre de types de pièces distincts.
 constexpr int kPieceCount = 7;
 
+// Position et orientation courantes d'une pièce sur le plateau.
 struct Piece {
     PieceType type = PieceType::I;
     int rotation = 0; // 0..3
@@ -27,17 +35,17 @@ struct Piece {
     int col = 0;
 };
 
-// Side length of the piece's bounding box (2, 3 or 4).
+// Côté de la boîte englobante de la pièce (2, 3 ou 4).
 int pieceSize(PieceType type);
 
-// Rotation-0 occupancy grid.
+// Grille d'occupation à la rotation 0.
 const std::vector<std::vector<int>>& baseShape(PieceType type);
 
-// Occupied cells relative to the piece's top-left corner.
+// Cellules occupées, relatives au coin supérieur gauche de la pièce.
 std::vector<std::pair<int, int>> occupiedCells(PieceType type, int rotation);
 
-// SRS wall-kick offsets (row, col) to try when rotating from state `from`.
-// `clockwise` selects the CW or CCW kick table for that transition.
+// Décalages de wall-kick SRS (rangée, colonne) à essayer lors d'une rotation
+// depuis l'état `from`. `clockwise` sélectionne la table CW ou CCW.
 const std::vector<std::pair<int, int>>& kickOffsets(PieceType type, int from, bool clockwise);
 
 } // namespace tetris

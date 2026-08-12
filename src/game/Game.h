@@ -1,3 +1,7 @@
+// Modèle de jeu pur : plateau, physique des pièces, gravité, délai de
+// verrouillage, suppression de lignes, détection des T-spins et score
+// "guideline". Aucun rendu ni gestion d'entrée n'ont lieu ici.
+
 #pragma once
 
 #include "Piece.h"
@@ -11,25 +15,27 @@
 
 namespace tetris {
 
+// État global de la partie.
 enum class GameState { Playing, Paused, GameOver };
 
-// Internal play sub-state, driven by the model clock.
+// Sous-état interne du jeu, piloté par l'horloge du modèle.
 enum class Phase { Drop, Landing, Clearing };
 
-// Guideline scoring: 100 / 300 / 500 / 800 points per clear, scaled by level.
+// Score "guideline" : 100 / 300 / 500 / 800 points par ligne, x niveau.
 int scoreForLines(int linesCleared, int level);
 
-// T-spin bonuses (guideline). `mini` selects the mini variant.
+// Bonus T-spin (guideline). `mini` sélectionne la variante mini.
 int tSpinScore(bool mini, int linesCleared, int level);
 
-// Consecutive line-clear bonus: 50 * combo * level.
+// Bonus de combo (suppressions consécutives) : 50 * combo * niveau.
 int comboScore(int combo, int level);
 
-// Perfect-clear (empty board) bonus.
+// Bonus de "perfect clear" (plateau vidé).
 int perfectClearBonus(int level);
 
-// Pure game model: no rendering, no input handling, no file I/O.
-// The terminal UI is a separate layer that only reads state and calls actions.
+// Modèle de jeu pur : aucun rendu, aucune entrée clavier, aucun accès
+// fichier. L'interface terminal est une couche séparée qui lit l'état et
+// déclenche des actions.
 class Game {
 public:
     Game();
@@ -37,7 +43,7 @@ public:
 
     void start();
 
-    // Actions (no-ops unless state is Playing).
+    // Actions (sans effet si l'état n'est pas "Playing").
     void moveLeft();
     void moveRight();
     void softDrop();
@@ -47,18 +53,20 @@ public:
     void holdPiece();
     void togglePause();
 
-    // Time-driven gravity, lock delay and clear animation. The UI calls
-    // update() each loop iteration; advance() is a deterministic test hook.
+    // Gravité, délai de verrouillage et animation de suppression pilotés par
+    // le temps. L'interface appelle update() à chaque itération ; advance()
+    // est un point d'entrée déterministe réservé aux tests.
     void update(std::chrono::steady_clock::time_point now);
     void advance(std::chrono::milliseconds dt);
-    // Milliseconds until the next gravity/lock/clear event (0 if due now).
+    // Millisecondes avant le prochain événement de gravité/verrouillage/
+    // suppression (0 si l'événement est dû maintenant).
     long long nextEventInMs() const;
 
-    // State accessors used for rendering.
+    // Accesseurs d'état utilisés pour le rendu.
     GameState state() const { return state_; }
     Phase phase() const { return phase_; }
     const std::array<std::array<int, kCols>, kRows>& board() const { return board_; }
-    // Rows being flashed during the clear animation (Phase::Clearing only).
+    // Rangées clignotantes pendant l'animation de suppression (Phase::Clearing).
     const std::vector<int>& clearingRows() const { return clearingRows_; }
     std::optional<Piece> current() const { return current_; }
     std::optional<Piece> ghost() const;
@@ -69,13 +77,13 @@ public:
     int lines() const { return lines_; }
     int level() const { return level_; }
     int combo() const { return combo_; }
-    // Human-readable label of the last scoring event (e.g. "T-SPIN", "COMBO x3").
+    // Libellé lisible du dernier événement de score (ex. "T-SPIN", "COMBO x3").
     const std::string& lastEvent() const { return lastEvent_; }
     const std::array<int, 4>& lineClears() const { return lineClears_; }
     long long fallIntervalMs() const { return fallIntervalMsForLevel(level_); }
     int durationSeconds() const;
 
-    // Test hook (not used by the game itself).
+    // Point d'entrée réservé aux tests (inutilisé par le jeu lui-même).
     void setCellForTesting(int row, int col, bool filled);
 
 private:
@@ -89,7 +97,7 @@ private:
     void spawnNext();
     void lockCurrent();
     void writeCurrentToBoard();
-    // 0 = none, 1 = mini, 2 = full T-spin.
+    // 0 = aucun, 1 = mini, 2 = T-spin complet.
     int detectTSpin() const;
     std::vector<int> findFullRows() const;
     void collapseRows(const std::vector<int>& rows);

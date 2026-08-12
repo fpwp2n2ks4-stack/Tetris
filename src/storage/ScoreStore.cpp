@@ -1,3 +1,5 @@
+// Implémentation de la persistance des meilleurs scores.
+
 #include "ScoreStore.h"
 
 #include <algorithm>
@@ -10,6 +12,7 @@ namespace tetris {
 
 namespace {
 
+// Nettoie un pseudo : retire les virgules et les espaces de début/fin.
 std::string cleanPseudo(std::string pseudo) {
     for (char& ch : pseudo) {
         if (ch == ',' || ch == '\n' || ch == '\r') ch = ' ';
@@ -23,8 +26,11 @@ std::string cleanPseudo(std::string pseudo) {
 
 } // namespace
 
+// Constructeur : choisit le fichier qui contient le tableau des scores.
 ScoreStore::ScoreStore(std::string file) : file_(std::move(file)) {}
 
+// Analyse une ligne CSV "pseudo,score,temps,1L,2L,3L,4L" et renseigne
+// `ok` selon la validité de la ligne.
 ScoreEntry ScoreStore::parseLine(const std::string& line, bool* ok) {
     ScoreEntry entry;
     std::vector<std::string> parts;
@@ -53,6 +59,7 @@ ScoreEntry ScoreStore::parseLine(const std::string& line, bool* ok) {
     return entry;
 }
 
+// Charge toutes les entrées valides du fichier.
 std::vector<ScoreEntry> ScoreStore::load() const {
     std::vector<ScoreEntry> scores;
     std::ifstream in(file_);
@@ -66,6 +73,8 @@ std::vector<ScoreEntry> ScoreStore::load() const {
     return scores;
 }
 
+// Insère une nouvelle entrée, trie les scores par ordre décroissant et
+// réécrit le fichier complet.
 void ScoreStore::save(const ScoreEntry& entry) {
     auto scores = load();
     scores.push_back(entry);
@@ -82,6 +91,7 @@ void ScoreStore::save(const ScoreEntry& entry) {
     }
 }
 
+// Renvoie les `n` meilleurs scores (ou tous s'il y en a moins).
 std::vector<ScoreEntry> ScoreStore::top(int n) const {
     auto scores = load();
     if (static_cast<int>(scores.size()) > n) {

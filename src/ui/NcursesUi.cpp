@@ -1,3 +1,5 @@
+// Implémentation du front-end ncurses : rendu du jeu et gestion des entrées.
+
 #include "NcursesUi.h"
 
 #include <ncurses.h>
@@ -14,6 +16,8 @@ namespace tetris {
 
 namespace {
 
+// Identifiants des couples de couleurs ncurses (l'ordre compte : colorId()
+// renvoie le couple du type de pièce, soit type + 1).
 constexpr int kPairI = 1;
 constexpr int kPairO = 2;
 constexpr int kPairT = 3;
@@ -24,23 +28,25 @@ constexpr int kPairL = 7;
 constexpr int kPairGhost = 8;
 constexpr int kPairFlash = 9;
 
-constexpr long long kDasMs = 150;   // delayed auto shift: held-key delay
-constexpr long long kArrMs = 50;    // auto repeat rate
-constexpr long long kReleaseMs = 100; // key considered released after this gap
+constexpr long long kDasMs = 150;   // delayed auto shift : délai avant répétition
+constexpr long long kArrMs = 50;    // taux de répétition automatique
+constexpr long long kReleaseMs = 100; // touche considérée relâchée après ce délai
 
-// Tracks whether a movement key is being held, using the gap between key
-// events to detect release (ncurses does not deliver key-up events).
+// Suit si une touche de déplacement est maintenue, en mesurant l'écart entre
+// deux événements clavier pour détecter le relâchement (ncurses ne fournit
+// pas d'événement de relâchement).
 //
-// A repeat is only armed once a *second* event arrives while the key is
-// still held: a single tap produces one event and therefore exactly one
-// move, while a genuine hold (whose OS-level key repeat produces further
-// events) enables delayed auto shift.
+// Une répétition n'est armée qu'à la réception d'un *second* événement tant
+// que la touche est encore tenue : une simple pression produit un seul
+// événement et donc un seul déplacement, tandis qu'un maintien réel (dont la
+// répétition du clavier OS génère d'autres événements) active le DAS.
 struct DasState {
     bool held = false;
     bool armed_ = false;
     std::chrono::steady_clock::time_point lastEvent{};
     std::chrono::steady_clock::time_point nextRepeat{};
 
+    // Enregistre une pression : arme le DAS à la deuxième pression consécutive.
     void press(std::chrono::steady_clock::time_point now) {
         if (!held) {
             held = true;
@@ -51,12 +57,16 @@ struct DasState {
         }
         lastEvent = now;
     }
+
+    // Vrai lorsqu'un déplacement de répétition (ARR) est dû maintenant.
     bool repeatDue(std::chrono::steady_clock::time_point now) {
         if (!held || !armed_) return false;
         if (now < nextRepeat) return false;
         nextRepeat += std::chrono::milliseconds(kArrMs);
         return true;
     }
+
+    // Détecte le relâchement : plus d'événement depuis kReleaseMs.
     void releaseCheck(std::chrono::steady_clock::time_point now) {
         if (held && now - lastEvent >= std::chrono::milliseconds(kReleaseMs)) {
             held = false;
@@ -67,12 +77,16 @@ struct DasState {
 
 } // namespace
 
+// Charge les réglages persistés (touches, couleur fantôme) depuis le disque.
 NcursesUi::NcursesUi() : settings_(settingsStore_.load()) {}
 
+// Restaure le terminal s'il a été initialisé.
 NcursesUi::~NcursesUi() {
     if (initialized_) endwin();
 }
 
+// Initialise ncurses : mode cbreak, pas d'écho, clavier étendu et couleurs.
+// Les couples de couleurs des pièces et de la fantôme sont déclarés ici.
 bool NcursesUi::init() {
     if (!initscr()) return false;
     cbreak();
@@ -96,6 +110,7 @@ bool NcursesUi::init() {
     return true;
 }
 
+// Ferme l'écran ncurses (aucun effet si déjà fermé).
 void NcursesUi::shutdown() {
     if (initialized_) {
         endwin();
@@ -103,10 +118,13 @@ void NcursesUi::shutdown() {
     }
 }
 
+// Identifiant du couple de couleurs d'un type de pièce (voir les constantes
+// kPair* ci-dessus).
 int NcursesUi::colorId(PieceType type) {
     return static_cast<int>(type) + 1;
 }
 
+// Formate un nombre de secondes en "HH:MM:SS".
 std::string NcursesUi::formatTime(int seconds) {
     const int h = seconds / 3600;
     const int m = (seconds % 3600) / 60;
@@ -116,6 +134,8 @@ std::string NcursesUi::formatTime(int seconds) {
     return buf;
 }
 
+// Traduit un code clavier (caractère ou KEY_* de ncurses) en libellé
+// lisible pour l'afficher dans les menus et l'aide.
 std::string NcursesUi::keyName(int key) {
     switch (key) {
         case ' ': return "Space";
@@ -137,6 +157,8 @@ std::string NcursesUi::keyName(int key) {
     return std::to_string(key);
 }
 
+// Vrai si le code clavier `ch` correspond à la touche configurée `bound` ;
+// pour une lettre, la majuscule et la minuscule sont équivalentes.
 bool NcursesUi::keyMatches(int ch, int bound) {
     if (ch == bound) return true;
     const unsigned char b = static_cast<unsigned char>(bound);
@@ -146,6 +168,7 @@ bool NcursesUi::keyMatches(int ch, int bound) {
     return false;
 }
 
+// Traduit un code couleur (0..7, valeurs ncurses COLOR_*) en nom lisible.
 std::string NcursesUi::colorName(int color) {
     static const std::array<const char*, 8> names = {
         "Black", "Red", "Green", "Yellow", "Blue", "Magenta", "Cyan", "White",
@@ -153,6 +176,9 @@ std::string NcursesUi::colorName(int color) {
     return names[static_cast<std::size_t>(color & 0x7)];
 }
 
+// Dessine une cellule du plateau selon son identifiant : vide (". "),
+// pièce fantôme (colorée et atténuée), ligne en cours de suppression
+// (clignotement) ou pièce normale.
 void NcursesUi::printCell(int id) const {
     if (id == 0) {
         printw(". ");
@@ -171,6 +197,8 @@ void NcursesUi::printCell(int id) const {
     }
 }
 
+// Dessine une rangée (sur 4) de la mini-grille d'une pièce du panneau
+// latéral (hold / next).
 void NcursesUi::printMiniLine(const std::optional<PieceType>& piece,
                               int row) const {
     static const std::vector<std::vector<int>> kEmptyShape;
@@ -190,6 +218,8 @@ void NcursesUi::printMiniLine(const std::optional<PieceType>& piece,
     }
 }
 
+// Dessine le panneau latéral (HOLD et NEXT) aligné sur la rangée de plateau
+// `row` : en-têtes, mini-grilles des pièces ou espaces vides.
 void NcursesUi::printSidePanel(const Game& game, int row) const {
     if (row == 0) {
         printw("%-8s", "HOLD");
@@ -216,6 +246,9 @@ void NcursesUi::printSidePanel(const Game& game, int row) const {
     printw("        ");
 }
 
+// Dessine une frame complète : plateau (avec pièce fantôme, pièce courante
+// et lignes en cours de suppression), panneau latéral, statistiques, dernier
+// événement et barre d'aide des touches configurées.
 void NcursesUi::renderGame(const Game& game) const {
     clear();
 
@@ -294,6 +327,9 @@ void NcursesUi::renderGame(const Game& game) const {
     refresh();
 }
 
+// Boucle de jeu principale : rend la frame, lit les entrées (avec DAS/ARR
+// pour les déplacements), met à jour le modèle et s'arrête à la fin de la
+// partie ou sur 'q'.
 bool NcursesUi::playGame(Game& game) {
     using Clock = std::chrono::steady_clock;
 
@@ -353,6 +389,8 @@ bool NcursesUi::playGame(Game& game) {
     return ended;
 }
 
+// Écran de fin de partie : statistiques puis saisie du pseudo (libre, écho
+// actif). Un pseudo vide devient "Anonymous".
 std::string NcursesUi::promptPseudo(const Game& game) {
     clear();
     printw("--- GAME OVER ---\n\n");
@@ -376,6 +414,8 @@ std::string NcursesUi::promptPseudo(const Game& game) {
     return pseudo;
 }
 
+// Affiche le tableau des meilleurs scores (10 premières entrées) et attend
+// une touche pour revenir au menu.
 void NcursesUi::showHighScores(const ScoreStore& store) {
     clear();
     printw("--- HIGH SCORES ---\n\n");
@@ -402,6 +442,9 @@ void NcursesUi::showHighScores(const ScoreStore& store) {
     getch();
 }
 
+// Écran de configuration : remappe les cinq actions de jeu et change la
+// couleur de la pièce fantôme. Vérifie les conflits de touches, permet de
+// réinitialiser (r) et enregistre les changements dans settings.txt.
 void NcursesUi::showKeyBindings() {
     struct Action {
         const char* name;
@@ -506,6 +549,9 @@ void NcursesUi::showKeyBindings() {
     }
 }
 
+// Menu principal : navigation aux flèches (ou j/k), sélection à Entrée.
+// Les entrées "Next Piece" et "Settings" basculent l'état / ouvrent l'écran
+// de réglages ; "Quit" renvoie 2 pour terminer le programme.
 int NcursesUi::showMainMenu() {
     int selection = 0;
 

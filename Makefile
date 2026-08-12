@@ -1,3 +1,12 @@
+# Makefile de TETRIS.
+#
+#   make          -> compile ./tetris
+#   make tests    -> compile ./tetris_tests (tests unitaires)
+#   make clean    -> supprime les binaires et le répertoire build/
+#
+# Le modèle de jeu (src/game, src/storage) est partagé entre le jeu et les
+# tests ; seule l'interface ncurses (src/ui) est propre au binaire tetris.
+
 CXX      := clang++
 CXXFLAGS := -std=c++17 -Wall -Wextra -Wpedantic -Wno-unused-parameter -Wshadow -Wconversion -Wsign-conversion -Wold-style-cast -Wformat=2 -Wuninitialized -Wimplicit-fallthrough -O2 -Isrc
 LDLIBS   := -lncurses
@@ -19,12 +28,15 @@ UI_OBJS   := $(patsubst src/%.cpp,$(BUILD)/%.o,$(UI_SRCS))
 
 all: tetris
 
+# Binaire du jeu : modèle + stockage + interface ncurses + point d'entrée.
 tetris: $(CORE_OBJS) $(UI_OBJS) $(BUILD)/main.o
 	$(CXX) $(CXXFLAGS) -o $@ $^ $(LDLIBS)
 
+# Binaire de tests : modèle + stockage, sans interface.
 tests: $(CORE_OBJS) $(BUILD)/test_main.o
 	$(CXX) $(CXXFLAGS) -o tetris_tests $^ $(LDLIBS)
 
+# Compilation générique des sources de src/ vers build/.
 $(BUILD)/%.o: src/%.cpp
 	@mkdir -p $(dir $@)
 	$(CXX) $(CXXFLAGS) -c $< -o $@

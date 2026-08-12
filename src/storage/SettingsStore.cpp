@@ -1,3 +1,5 @@
+// Implémentation de la persistance des réglages.
+
 #include "SettingsStore.h"
 
 #include <fstream>
@@ -8,6 +10,7 @@ namespace tetris {
 
 namespace {
 
+// Noms de champs utilisés dans le fichier de réglages.
 constexpr const char* kLeft = "left";
 constexpr const char* kRight = "right";
 constexpr const char* kRotate = "rotate";
@@ -17,8 +20,11 @@ constexpr const char* kGhostColor = "ghostcolor";
 
 } // namespace
 
+// Constructeur : choisit le fichier qui contient les réglages.
 SettingsStore::SettingsStore(std::string file) : file_(std::move(file)) {}
 
+// Lit le fichier ligne par ligne, au format "nom,valeur", et ne conserve
+// que les champs reconnus. Les valeurs absentes restent par défaut.
 Settings SettingsStore::load() const {
     Settings settings;
     std::ifstream in(file_);
@@ -52,6 +58,7 @@ Settings SettingsStore::load() const {
     return settings;
 }
 
+// Écrit tous les réglages dans le fichier (tronqué au préalable).
 void SettingsStore::save(const Settings& settings) const {
     std::ofstream out(file_, std::ios::trunc);
     if (!out.is_open()) return;

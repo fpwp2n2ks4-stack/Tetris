@@ -1,3 +1,5 @@
+// Implémentation des fonctions d'aide aux pièces déclarées dans Piece.h.
+
 #include "Piece.h"
 
 #include <cstddef>
@@ -5,6 +7,8 @@
 
 namespace tetris {
 
+// Renvoie la grille d'occupation (rotation 0) du type de pièce donné.
+// Chaque cellule vaut 1 si elle est occupée, 0 sinon.
 const std::vector<std::vector<int>>& baseShape(PieceType type) {
     static const std::vector<std::vector<int>> kShapes[kPieceCount] = {
         // I (4x4)
@@ -25,12 +29,15 @@ const std::vector<std::vector<int>>& baseShape(PieceType type) {
     return kShapes[static_cast<int>(type)];
 }
 
+// Renvoie la taille (n x n) de la boîte englobante de la pièce.
 int pieceSize(PieceType type) {
     return static_cast<int>(baseShape(type).size());
 }
 
 namespace {
 
+// Calcule la grille d'occupation de la pièce après `rotation` tours de 90°
+// dans le sens horaire (les rotations négatives sont normalisées).
 std::vector<std::vector<int>> rotatedShape(PieceType type, int rotation) {
     auto shape = baseShape(type);
     const std::size_t n = shape.size();
@@ -47,6 +54,9 @@ std::vector<std::vector<int>> rotatedShape(PieceType type, int rotation) {
     return shape;
 }
 
+// Tables de wall-kick SRS : décalages (rangée, colonne) à tester pour
+// chaque rotation source, dans le sens horaire (CW) ou anti-horaire (CCW).
+// L'ordre correspond aux lignes officielles du SRS.
 const std::vector<std::pair<int, int>> kKicksJlstzCW[4] = {
     {{0, 0}, {0, -1}, {-1, -1}, {2, 0}, {2, -1}},
     {{0, 0}, {0, 1}, {1, 1}, {-2, 0}, {-2, 1}},
@@ -71,10 +81,12 @@ const std::vector<std::pair<int, int>> kKicksICCW[4] = {
     {{0, 0}, {0, 1}, {0, -2}, {2, -1}, {1, -2}},
     {{0, 0}, {0, -2}, {0, 1}, {1, -2}, {-2, 1}},
 };
+// Tables de kick vides pour la pièce O, qui ne se déplace jamais en rotant.
 const std::vector<std::pair<int, int>> kEmpty;
 
 } // namespace
 
+// Énumère les cellules occupées (décalages relatifs) après rotation.
 std::vector<std::pair<int, int>> occupiedCells(PieceType type, int rotation) {
     auto shape = rotatedShape(type, rotation);
     std::vector<std::pair<int, int>> cells;
@@ -88,6 +100,8 @@ std::vector<std::pair<int, int>> occupiedCells(PieceType type, int rotation) {
     return cells;
 }
 
+// Renvoie la liste de décalages de wall-kick à essayer pour la rotation
+// `from` -> `from + 1` (CW) ou `from - 1` (CCW), selon le type de pièce.
 const std::vector<std::pair<int, int>>& kickOffsets(PieceType type, int from, bool clockwise) {
     const int idx = ((from % 4) + 4) % 4;
     if (type == PieceType::I) {

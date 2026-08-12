@@ -1,9 +1,16 @@
+// TETRIS — point d'entrée du programme.
+//
+// Relie le modèle de jeu pur à l'interface ncurses et aux deux couches de
+// stockage, puis exécute la boucle principale : menu -> partie -> écran de
+// fin/pseudo -> meilleurs scores, jusqu'à ce que le joueur quitte.
+
 #include "game/Game.h"
 #include "storage/ScoreStore.h"
 #include "ui/NcursesUi.h"
 
 #include <string>
 
+// Lance toute l'application. Renvoie 0 en cas de sortie propre.
 int main() {
     tetris::ScoreStore store;
     tetris::NcursesUi ui;

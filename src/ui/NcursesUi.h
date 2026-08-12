@@ -1,3 +1,7 @@
+// Interface ncurses : affiche le modèle de jeu et traduit les entrées
+// clavier en actions sur Game. Gère aussi les menus (principal, réglages,
+// meilleurs scores).
+
 #pragma once
 
 #include "../game/Game.h"
@@ -9,8 +13,8 @@
 
 namespace tetris {
 
-// Ncurses front-end: renders the model state and maps keyboard input to
-// Game actions. Contains no game rules.
+// Front-end ncurses : rend l'état du modèle et mappe le clavier vers les
+// actions du jeu. Ne contient aucune règle de jeu.
 class NcursesUi {
 public:
     NcursesUi();
@@ -19,34 +23,56 @@ public:
     NcursesUi(const NcursesUi&) = delete;
     NcursesUi& operator=(const NcursesUi&) = delete;
 
+    // Initialise l'écran ncurses (couleurs comprises). False si échec.
     bool init();
+
+    // Restaure le terminal (l'appel à endwin est idempotent ici).
     void shutdown();
 
-    // Returns 0 = play, 1 = high scores, 2 = quit.
+    // Affiche le menu principal. Renvoie 0 = jouer, 1 = scores, 2 = quitter.
     int showMainMenu();
 
-    // Runs the game loop. Returns true if the game ended, false if the
-    // player quit mid-game (no score is saved in that case).
+    // Boucle de jeu : rend, lit le clavier, met à jour le modèle. Renvoie
+    // true si la partie s'est terminée, false si le joueur a quitté en cours
+    // de partie (aucun score n'est alors enregistré).
     bool playGame(Game& game);
 
-    // Final stats screen; returns the player's name.
+    // Écran de fin de partie ; renvoie le pseudo saisi par le joueur.
     std::string promptPseudo(const Game& game);
 
+    // Affiche le tableau des meilleurs scores.
     void showHighScores(const ScoreStore& store);
 
-    // Key/settings configuration screen.
+    // Écran de configuration des touches et de la couleur fantôme.
     void showKeyBindings();
 
 private:
+    // Identifiant de couple de couleurs ncurses d'un type de pièce.
     static int colorId(PieceType type);
+
+    // Formate une durée en secondes au format HH:MM:SS.
     static std::string formatTime(int seconds);
+
+    // Nom lisible d'un code clavier ncurses (ex. "Space", "Left").
     static std::string keyName(int key);
+
+    // Nom lisible d'un code couleur (ex. "Red").
     static std::string colorName(int color);
+
+    // Vrai si `ch` correspond à la touche `bound` (en gérant majuscule/
+    // minuscule pour les lettres).
     static bool keyMatches(int ch, int bound);
 
+    // Dessine une frame complète du jeu sur l'écran.
     void renderGame(const Game& game) const;
+
+    // Dessine une cellule du plateau selon son identifiant de couleur.
     void printCell(int id) const;
+
+    // Dessine une ligne de la mini-grille (hold/next) d'une pièce.
     void printMiniLine(const std::optional<PieceType>& piece, int row) const;
+
+    // Dessine le panneau latéral (hold + next) pour une rangée donnée.
     void printSidePanel(const Game& game, int row) const;
 
     bool initialized_ = false;

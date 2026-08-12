@@ -1,3 +1,5 @@
+// Implémentation du modèle de jeu Game.
+
 #include "Game.h"
 
 #include <algorithm>
@@ -8,11 +10,12 @@
 namespace tetris {
 
 namespace {
-constexpr long long kLockDelayMs = 500;
-constexpr int kLockResetsMax = 15;
-constexpr long long kClearFlashMs = 300;
+constexpr long long kLockDelayMs = 500;   // délai de verrouillage (500 ms)
+constexpr int kLockResetsMax = 15;        // réinitialisations max du délai
+constexpr long long kClearFlashMs = 300;  // durée du clignotement de lignes
 } // namespace
 
+// Score d'une suppression de `linesCleared` lignes (1 à 4), x niveau.
 int scoreForLines(int linesCleared, int level) {
     static const int kScores[5] = {0, 100, 300, 500, 800};
     if (linesCleared < 1 || linesCleared > 4) {
@@ -21,6 +24,7 @@ int scoreForLines(int linesCleared, int level) {
     return kScores[linesCleared] * level;
 }
 
+// Score d'un T-spin (mini ou complet), en fonction des lignes supprimées.
 int tSpinScore(bool mini, int linesCleared, int level) {
     if (mini) {
         static const int kMini[2] = {100, 200};
@@ -32,18 +36,24 @@ int tSpinScore(bool mini, int linesCleared, int level) {
     return kNormal[linesCleared] * level;
 }
 
+// Score d'un combo : 50 points par niveau de combo, x niveau.
 int comboScore(int combo, int level) {
     return 50 * combo * level;
 }
 
+// Bonus de "perfect clear" : plateau entièrement vidé.
 int perfectClearBonus(int level) {
     return 3500 * level;
 }
 
+// Constructeur par défaut : utilise un générateur aléatoire.
 Game::Game() = default;
 
+// Constructeur avec un générateur injecté (séquence fixe pour les tests).
 Game::Game(Randomizer randomizer) : randomizer_(std::move(randomizer)) {}
 
+// Démarre une nouvelle partie : réinitialise le plateau, le score et tous
+// les compteurs, puis fait apparaître la première pièce.
 void Game::start() {
     board_.fill({});
     score_ = 0;
@@ -72,6 +82,8 @@ void Game::start() {
     spawnNext();
 }
 
+// Vérifie si la pièce donnée chevauche un mur, le sol ou une cellule déjà
+// remplie du plateau.
 bool Game::collides(const Piece& piece) const {
     for (auto [dr, dc] : occupiedCells(piece.type, piece.rotation)) {
         const int r = piece.row + dr;
@@ -86,6 +98,7 @@ bool Game::collides(const Piece& piece) const {
     return false;
 }
 
+// Indique si la pièce courante ne peut plus descendre d'une case.
 bool Game::isGrounded() const {
     if (!current_) return false;
     Piece down = *current_;
@@ -93,6 +106,8 @@ bool Game::isGrounded() const {
     return collides(down);
 }
 
+// Fait apparaître une pièce en haut du plateau. Renvoie false (et termine
+// la partie) si le spawn chevauche déjà des blocs.
 bool Game::trySpawn(PieceType type) {
     if (state_ != GameState::Playing) return false;
     Piece p;
@@ -108,6 +123,7 @@ bool Game::trySpawn(PieceType type) {
     return true;
 }
 
+// Consomme la pièce "next" pré-affichée, sinon en tire une du générateur.
 PieceType Game::takeNext() {
     if (nextPiece_) {
         PieceType t = *nextPiece_;
@@ -117,12 +133,15 @@ PieceType Game::takeNext() {
     return randomizer_.next();
 }
 
+// Tire à l'avance la pièce suivante si elle n'est pas encore connue.
 void Game::prefetchNext() {
     if (!nextPiece_) {
         nextPiece_ = randomizer_.next();
     }
 }
 
+// Fait apparaître la pièce suivante et planifie la prochaine chute de
+// gravité.
 void Game::spawnNext() {
     phase_ = Phase::Drop;
     canHold_ = true;
@@ -132,6 +151,8 @@ void Game::spawnNext() {
     nextGravityMs_ = nowMs_ + fallIntervalMs();
 }
 
+// Écrit les cellules de la pièce courante dans le plateau (avec la couleur
+// encodée comme type + 1).
 void Game::writeCurrentToBoard() {
     if (!current_) return;
     for (auto [dr, dc] : occupiedCells(current_->type, current_->rotation)) {
@@ -144,6 +165,7 @@ void Game::writeCurrentToBoard() {
     }
 }
 
+// Cherche les rangées complètes (du bas vers le haut).
 std::vector<int> Game::findFullRows() const {
     std::vector<int> rows;
     for (int r = kRows - 1; r >= 0; --r) {
@@ -156,6 +178,8 @@ std::vector<int> Game::findFullRows() const {
     return rows;
 }
 
+// Supprime les rangées indiquées en faisant glisser les blocs au-dessus
+// vers le bas.
 void Game::collapseRows(const std::vector<int>& rows) {
     if (rows.empty()) return;
     std::vector<bool> removed(kRows, false);
@@ -174,6 +198,7 @@ void Game::collapseRows(const std::vector<int>& rows) {
     }
 }
 
+// Vrai si le plateau est vide hors des rangées en cours de suppression.
 bool Game::isPerfectClear() const {
     for (int r = 0; r < kRows; ++r) {
         if (std::find(clearingRows_.begin(), clearingRows_.end(), r) !=
@@ -189,6 +214,8 @@ bool Game::isPerfectClear() const {
     return true;
 }
 
+// Détecte un T-spin (règle des trois coins) pour la pièce T courante :
+// renvoie 2 (complet) si au moins 3 coins sont occupés, 1 (mini) si 2 coins.
 int Game::detectTSpin() const {
     if (!current_ || current_->type != PieceType::T || !tSpinFlag_) return 0;
     static const int kOffsets[4][2] = {{0, 0}, {0, 2}, {2, 0}, {2, 2}};
@@ -206,6 +233,9 @@ int Game::detectTSpin() const {
     return 0;
 }
 
+// Applique le score d'une suppression de lignes et/ou d'un T-spin : points
+// de base, combos, bonus back-to-back, perfect clear, et mise à jour du
+// niveau ainsi que du libellé du dernier événement.
 void Game::applyScoring(int cleared, int tSpinType) {
     int gained = 0;
     lastEvent_.clear();
@@ -253,6 +283,8 @@ void Game::applyScoring(int cleared, int tSpinType) {
     score_ += gained;
 }
 
+// Verrouille la pièce courante dans le plateau, puis lance la suppression
+// des lignes pleines (avec animation) ou fait apparaître la pièce suivante.
 void Game::lockCurrent() {
     if (!current_ || state_ != GameState::Playing) return;
     writeCurrentToBoard();
@@ -271,12 +303,15 @@ void Game::lockCurrent() {
     spawnNext();
 }
 
+// Termine l'animation de suppression : efface les rangées pleines puis
+// fait apparaître la pièce suivante.
 void Game::finishClear() {
     collapseRows(clearingRows_);
     clearingRows_.clear();
     spawnNext();
 }
 
+// Termine la partie : enregistre l'heure de fin et retire la pièce courante.
 void Game::setGameOver() {
     state_ = GameState::GameOver;
     endedAt_ = std::chrono::steady_clock::now();
@@ -284,6 +319,9 @@ void Game::setGameOver() {
     phase_ = Phase::Drop;
 }
 
+// Fait descendre la pièce d'une case et ajoute les points demandés (1 pour
+// un soft drop, 2 par case pour un hard drop). Passe en phase Landing quand
+// la pièce touche le sol.
 bool Game::tryMoveDown(int pointsPerCell) {
     if (state_ != GameState::Playing || !current_) return false;
     Piece down = *current_;
@@ -306,6 +344,8 @@ bool Game::tryMoveDown(int pointsPerCell) {
     return true;
 }
 
+// Réévalue l'état d'appui au sol : relance le délai de verrouillage (avec
+// réinitialisations limitées) ou revient à la chute libre après un déplacement.
 void Game::reground() {
     if (!current_ || state_ != GameState::Playing) return;
     if (isGrounded()) {
@@ -325,6 +365,7 @@ void Game::reground() {
     }
 }
 
+// Déplace la pièce d'une colonne vers la gauche si possible.
 void Game::moveLeft() {
     if (state_ != GameState::Playing || !current_) return;
     Piece moved = *current_;
@@ -336,6 +377,7 @@ void Game::moveLeft() {
     }
 }
 
+// Déplace la pièce d'une colonne vers la droite si possible.
 void Game::moveRight() {
     if (state_ != GameState::Playing || !current_) return;
     Piece moved = *current_;
@@ -347,10 +389,13 @@ void Game::moveRight() {
     }
 }
 
+// Soft drop : une case vers le bas, 1 point par case.
 void Game::softDrop() {
     tryMoveDown(1);
 }
 
+// Hard drop : la pièce tombe immédiatement jusqu'au sol, 2 points par case,
+// puis se verrouille sans délai.
 void Game::hardDrop() {
     if (state_ != GameState::Playing || !current_) return;
     int cells = 0;
@@ -368,14 +413,19 @@ void Game::hardDrop() {
     lockCurrent();
 }
 
+// Rotation horaire (CW).
 bool Game::rotateCW() {
     return rotate(1);
 }
 
+// Rotation anti-horaire (CCW).
 bool Game::rotateCCW() {
     return rotate(3);
 }
 
+// Tente une rotation de `direction` pas (1 = CW, 3 = CCW) en essayant les
+// décalages de wall-kick SRS. Active le drapeau de T-spin si la pièce est
+// posée après la rotation.
 bool Game::rotate(int direction) {
     if (state_ != GameState::Playing || !current_) return false;
     if (current_->type == PieceType::O) return true;
@@ -396,6 +446,8 @@ bool Game::rotate(int direction) {
     return false;
 }
 
+// Échange la pièce courante avec la pièce en réserve (une seule fois par
+// pièce, sauf si la réserve vient d'être vidée).
 void Game::holdPiece() {
     if (state_ != GameState::Playing || !current_ || !canHold_) return;
     const PieceType held = current_->type;
@@ -415,6 +467,7 @@ void Game::holdPiece() {
     prefetchNext();
 }
 
+// Bascule entre les états Playing et Paused.
 void Game::togglePause() {
     if (state_ == GameState::Playing) {
         state_ = GameState::Paused;
@@ -423,6 +476,8 @@ void Game::togglePause() {
     }
 }
 
+// Avance la simulation de `dtMs` millisecondes : gère l'animation de
+// suppression, le délai de verrouillage et la gravité.
 void Game::advanceInternal(long long dtMs) {
     if (state_ != GameState::Playing) return;
     nowMs_ += dtMs;
@@ -443,10 +498,13 @@ void Game::advanceInternal(long long dtMs) {
     }
 }
 
+// Point d'entrée déterministe pour les tests : avance le temps d'un delta.
 void Game::advance(std::chrono::milliseconds dt) {
     advanceInternal(dt.count());
 }
 
+// Avance le jeu en fonction de l'horloge réelle (bornée à 200 ms par appel
+// pour éviter les grands sauts lors d'un ralentissement de l'interface).
 void Game::update(std::chrono::steady_clock::time_point now) {
     if (state_ != GameState::Playing) {
         lastUpdate_ = now;
@@ -463,6 +521,8 @@ void Game::update(std::chrono::steady_clock::time_point now) {
     advanceInternal(std::min(dt, 200LL));
 }
 
+// Nombre de millisecondes avant le prochain événement du jeu ; l'interface
+// l'utilise pour calibrer son délai d'attente sur les entrées.
 long long Game::nextEventInMs() const {
     if (state_ != GameState::Playing) return 500;
     if (phase_ == Phase::Clearing) {
@@ -474,6 +534,8 @@ long long Game::nextEventInMs() const {
     return std::max(0LL, nextGravityMs_ - nowMs_);
 }
 
+// Position de la "pièce fantôme" : la pièce courante projetée tout en bas
+// du plateau.
 std::optional<Piece> Game::ghost() const {
     if (state_ != GameState::Playing || !current_) return std::nullopt;
     Piece g = *current_;
@@ -486,6 +548,8 @@ std::optional<Piece> Game::ghost() const {
     return g;
 }
 
+// Intervalle de chute (ms) pour un niveau donné : diminue à mesure que le
+// niveau augmente, avec une accélération "guideline".
 long long Game::fallIntervalMsForLevel(int level) {
     double secs = std::pow(0.8 - (level - 1) * 0.007, level - 1);
     if (level >= 20) {
@@ -495,6 +559,7 @@ long long Game::fallIntervalMsForLevel(int level) {
     return static_cast<long long>(secs * 1000.0);
 }
 
+// Durée totale de la partie en secondes (jusqu'à la fin ou à maintenant).
 int Game::durationSeconds() const {
     if (startedAt_ == std::chrono::steady_clock::time_point{}) return 0;
     const auto end = endedAt_ ? *endedAt_ : std::chrono::steady_clock::now();
@@ -503,6 +568,7 @@ int Game::durationSeconds() const {
                                 .count());
 }
 
+// Remplit ou vide une cellule du plateau (réservé aux tests).
 void Game::setCellForTesting(int row, int col, bool filled) {
     if (row < 0 || row >= kRows || col < 0 || col >= kCols) return;
     board_[static_cast<std::size_t>(row)][static_cast<std::size_t>(col)] =

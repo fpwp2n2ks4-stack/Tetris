@@ -1,11 +1,15 @@
+// Persistance des réglages utilisateur (touches + couleur de la pièce
+// fantôme) dans un fichier CSV.
+
 #pragma once
 
 #include <string>
 
 namespace tetris {
 
-// Ghost-piece color codes, mirroring ncurses COLOR_* values (kept here so
-// the storage layer stays ncurses-free).
+// Codes de couleur de la pièce fantôme, qui reprennent les valeurs ncurses
+// COLOR_* (définis ici pour que la couche de stockage reste indépendante
+// de ncurses).
 constexpr int kGhostColorBlack = 0;
 constexpr int kGhostColorRed = 1;
 constexpr int kGhostColorGreen = 2;
@@ -15,9 +19,9 @@ constexpr int kGhostColorMagenta = 5;
 constexpr int kGhostColorCyan = 6;
 constexpr int kGhostColorWhite = 7;
 
-// User-configurable gameplay settings. The arrow keys always work as an
-// alternative to the secondary keys shown in the help bar. `ghostColor` is
-// one of the kGhostColor* codes above.
+// Réglages modifiables par le joueur. Les touches fléchées restent toujours
+// disponibles en alternative aux touches secondaires affichées dans l'aide.
+// `ghostColor` est un des codes kGhostColor* ci-dessus.
 struct Settings {
     int moveLeft = 'j';
     int moveRight = 'l';
@@ -27,15 +31,17 @@ struct Settings {
     int ghostColor = kGhostColorBlack;
 };
 
-// Loads and persists the settings file (one "name,value" pair per line).
+// Charge et enregistre le fichier de réglages (une paire "nom,valeur" par
+// ligne).
 class SettingsStore {
 public:
     explicit SettingsStore(std::string file = "settings.txt");
 
-    // Reads the file; missing or invalid entries keep their defaults.
+    // Lit le fichier ; les entrées manquantes ou invalides gardent leur
+    // valeur par défaut.
     Settings load() const;
 
-    // Writes the current settings back to the file.
+    // Réécrit les réglages courants dans le fichier.
     void save(const Settings& settings) const;
 
 private:
