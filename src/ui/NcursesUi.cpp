@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cctype>
 #include <chrono>
 #include <cstddef>
 #include <cstdio>
@@ -66,6 +67,8 @@ struct DasState {
 
 } // namespace
 
+NcursesUi::NcursesUi() : settings_(settingsStore_.load()) {}
+
 NcursesUi::~NcursesUi() {
     if (initialized_) endwin();
 }
@@ -85,7 +88,8 @@ bool NcursesUi::init() {
         init_pair(kPairZ, COLOR_WHITE, COLOR_RED);
         init_pair(kPairJ, COLOR_WHITE, COLOR_BLUE);
         init_pair(kPairL, COLOR_BLACK, COLOR_WHITE);
-        init_pair(kPairGhost, COLOR_BLACK, COLOR_WHITE);
+        init_pair(kPairGhost, COLOR_BLACK,
+                  static_cast<short>(settings_.ghostColor & 0x7));
         init_pair(kPairFlash, COLOR_WHITE, COLOR_BLACK);
     }
     initialized_ = true;
@@ -110,6 +114,43 @@ std::string NcursesUi::formatTime(int seconds) {
     char buf[16];
     std::snprintf(buf, sizeof buf, "%02d:%02d:%02d", h, m, s);
     return buf;
+}
+
+std::string NcursesUi::keyName(int key) {
+    switch (key) {
+        case ' ': return "Space";
+        case KEY_LEFT: return "Left";
+        case KEY_RIGHT: return "Right";
+        case KEY_UP: return "Up";
+        case KEY_DOWN: return "Down";
+        case KEY_ENTER: return "Enter";
+        case '\n': return "Enter";
+        case '\r': return "Enter";
+        case '\t': return "Tab";
+        case 27: return "Esc";
+        case KEY_BACKSPACE: return "Backspace";
+        default: break;
+    }
+    if (key >= 32 && key <= 126) {
+        return std::string(1, static_cast<char>(key));
+    }
+    return std::to_string(key);
+}
+
+bool NcursesUi::keyMatches(int ch, int bound) {
+    if (ch == bound) return true;
+    const unsigned char b = static_cast<unsigned char>(bound);
+    if (std::isalpha(b)) {
+        return ch == std::toupper(b) || ch == std::tolower(b);
+    }
+    return false;
+}
+
+std::string NcursesUi::colorName(int color) {
+    static const std::array<const char*, 8> names = {
+        "Black", "Red", "Green", "Yellow", "Blue", "Magenta", "Cyan", "White",
+    };
+    return names[static_cast<std::size_t>(color & 0x7)];
 }
 
 void NcursesUi::printCell(int id) const {
@@ -226,6 +267,9 @@ void NcursesUi::renderGame(const Game& game) const {
         printw("\n");
     }
 
+    const auto& lc = game.lineClears();
+    printw("\n1L: %d    2L: %d    3L: %d    Tetris: %d",
+           lc[0], lc[1], lc[2], lc[3]);
     printw("\nScore: %d    Lines: %d    Level: %d",
            game.score(), game.lines(), game.level());
     if (game.combo() > 1) {
@@ -241,8 +285,11 @@ void NcursesUi::renderGame(const Game& game) const {
         attroff(A_BOLD);
     }
     attron(A_DIM);
-    printw("Arrows or j/k/l/s move-rotate  Space: hard drop  "
-           "h: hold  n: next piece  p: pause  q: quit\n");
+    printw("Arrows: move/rotate/soft drop   %s: left   %s: right   %s: rotate   "
+           "%s: soft drop   %s: hard drop   h: hold   n: next   p: pause   q: quit\n",
+           keyName(settings_.moveLeft).c_str(), keyName(settings_.moveRight).c_str(),
+           keyName(settings_.rotate).c_str(), keyName(settings_.softDrop).c_str(),
+           keyName(settings_.hardDrop).c_str());
     attroff(A_DIM);
     refresh();
 }
@@ -263,53 +310,27 @@ bool NcursesUi::playGame(Game& game) {
         const int ch = getch();
         auto now = Clock::now();
         if (ch != ERR && ch != -1) {
-            switch (ch) {
-                case 'q':
-                case 'Q':
-                    running = false;
-                    break;
-                case 'p':
-                case 'P':
-                    game.togglePause();
-                    break;
-                case KEY_LEFT:
-                case 'j':
-                case 'J':
-                    if (!left.held) game.moveLeft();
-                    left.press(now);
-                    break;
-                case KEY_RIGHT:
-                case 'l':
-                case 'L':
-                    if (!right.held) game.moveRight();
-                    right.press(now);
-                    break;
-                case KEY_DOWN:
-                case 's':
-                case 'S':
-                    if (!down.held) game.softDrop();
-                    down.press(now);
-                    break;
-                case KEY_UP:
-                case 'k':
-                case 'K':
-                    game.rotateCW();
-                    break;
-                case ' ':
-                    game.hardDrop();
-                    break;
-                case 'h':
-                case 'H':
-                case 'c':
-                case 'C':
-                    game.holdPiece();
-                    break;
-                case 'n':
-                case 'N':
-                    showNextPiece_ = !showNextPiece_;
-                    break;
-                default:
-                    break;
+            if (ch == 'q' || ch == 'Q') {
+                running = false;
+            } else if (ch == 'p' || ch == 'P') {
+                game.togglePause();
+            } else if (ch == KEY_LEFT || keyMatches(ch, settings_.moveLeft)) {
+                if (!left.held) game.moveLeft();
+                left.press(now);
+            } else if (ch == KEY_RIGHT || keyMatches(ch, settings_.moveRight)) {
+                if (!right.held) game.moveRight();
+                right.press(now);
+            } else if (ch == KEY_DOWN || keyMatches(ch, settings_.softDrop)) {
+                if (!down.held) game.softDrop();
+                down.press(now);
+            } else if (ch == KEY_UP || keyMatches(ch, settings_.rotate)) {
+                game.rotateCW();
+            } else if (keyMatches(ch, settings_.hardDrop)) {
+                game.hardDrop();
+            } else if (ch == 'h' || ch == 'H' || ch == 'c' || ch == 'C') {
+                game.holdPiece();
+            } else if (ch == 'n' || ch == 'N') {
+                showNextPiece_ = !showNextPiece_;
             }
         }
 
@@ -381,6 +402,110 @@ void NcursesUi::showHighScores(const ScoreStore& store) {
     getch();
 }
 
+void NcursesUi::showKeyBindings() {
+    struct Action {
+        const char* name;
+        int Settings::* field;
+        bool isColor;
+    };
+    const Action actions[6] = {
+        {"Move Left", &Settings::moveLeft, false},
+        {"Move Right", &Settings::moveRight, false},
+        {"Rotate", &Settings::rotate, false},
+        {"Soft Drop", &Settings::softDrop, false},
+        {"Hard Drop", &Settings::hardDrop, false},
+        {"Ghost Color", &Settings::ghostColor, true},
+    };
+    constexpr int kCount = 6;
+    int selection = 0;
+    bool changed = false;
+    std::string message;
+
+    while (true) {
+        clear();
+        attron(A_BOLD);
+        printw("SETTINGS\n");
+        attroff(A_BOLD);
+        printw("\n");
+        for (int i = 0; i < kCount; ++i) {
+            const std::string value = actions[i].isColor
+                                          ? colorName(settings_.*(actions[i].field))
+                                          : keyName(settings_.*(actions[i].field));
+            if (i == selection) attron(A_REVERSE);
+            printw("  %-12s : %s\n", actions[i].name, value.c_str());
+            if (i == selection) attroff(A_REVERSE);
+        }
+        printw("\n%s", message.c_str());
+        printw("Arrows move (or change color), Enter to change, "
+               "r to reset, q to return\n");
+        refresh();
+
+        timeout(-1);
+        const int ch = getch();
+        message.clear();
+        const bool onColor = actions[selection].isColor;
+        if (ch == KEY_UP || ch == 'k' || ch == 'K') {
+            selection = (selection - 1 + kCount) % kCount;
+        } else if (ch == KEY_DOWN || ch == 'j' || ch == 'J') {
+            selection = (selection + 1) % kCount;
+        } else if (onColor && (ch == KEY_LEFT || ch == KEY_RIGHT ||
+                               ch == '\n' || ch == '\r' || ch == KEY_ENTER)) {
+            int& color = settings_.*(actions[selection].field);
+            if (ch == KEY_LEFT) {
+                color = (color + 7) & 0x7;
+            } else {
+                color = (color + 1) & 0x7;
+            }
+            changed = true;
+            message = "Ghost color set to " + colorName(color) + ".";
+        } else if (ch == '\n' || ch == '\r' || ch == KEY_ENTER) {
+            clear();
+            printw("Press a new key for '%s' (Esc to cancel)\n",
+                   actions[selection].name);
+            refresh();
+            const int newKey = getch();
+            if (newKey == 27 || newKey == ERR || newKey == -1) {
+                message = "Key change cancelled.";
+                continue;
+            }
+            int conflicting = -1;
+            for (int i = 0; i < kCount; ++i) {
+                if (i != selection && keyMatches(newKey, settings_.*(actions[i].field))) {
+                    conflicting = i;
+                    break;
+                }
+            }
+            if (conflicting != -1) {
+                message = std::string("Key already used for '") +
+                          actions[conflicting].name + "'.";
+                continue;
+            }
+            if (keyMatches(newKey, 'q') || keyMatches(newKey, 'p') ||
+                keyMatches(newKey, 'h') || keyMatches(newKey, 'c') ||
+                keyMatches(newKey, 'n')) {
+                message = "Key conflicts with a fixed action (q/p/h/c/n).";
+                continue;
+            }
+            settings_.*(actions[selection].field) = newKey;
+            changed = true;
+            message = std::string("'") + keyName(newKey) + "' bound to " +
+                      actions[selection].name + ".";
+        } else if (ch == 'r' || ch == 'R') {
+            settings_ = Settings{};
+            changed = true;
+            message = "Settings reset to defaults.";
+        } else if (ch == 'q' || ch == 'Q') {
+            break;
+        }
+    }
+
+    if (changed) {
+        settingsStore_.save(settings_);
+        init_pair(kPairGhost, COLOR_BLACK,
+                  static_cast<short>(settings_.ghostColor & 0x7));
+    }
+}
+
 int NcursesUi::showMainMenu() {
     int selection = 0;
 
@@ -389,6 +514,7 @@ int NcursesUi::showMainMenu() {
             "Play",
             "High Scores",
             showNextPiece_ ? "Next Piece: On" : "Next Piece: Off",
+            "Settings",
             "Quit",
         };
         const int count = static_cast<int>(items.size());
@@ -424,7 +550,11 @@ int NcursesUi::showMainMenu() {
                     showNextPiece_ = !showNextPiece_;
                     break;
                 }
-                return selection == 3 ? 2 : selection;
+                if (selection == 3) { // key bindings
+                    showKeyBindings();
+                    break;
+                }
+                return selection == 4 ? 2 : selection;
             case 'q':
             case 'Q':
                 return 2;

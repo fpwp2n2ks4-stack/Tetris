@@ -2,6 +2,7 @@
 
 #include "../game/Game.h"
 #include "../storage/ScoreStore.h"
+#include "../storage/SettingsStore.h"
 
 #include <optional>
 #include <string>
@@ -12,7 +13,7 @@ namespace tetris {
 // Game actions. Contains no game rules.
 class NcursesUi {
 public:
-    NcursesUi() = default;
+    NcursesUi();
     ~NcursesUi();
 
     NcursesUi(const NcursesUi&) = delete;
@@ -33,9 +34,15 @@ public:
 
     void showHighScores(const ScoreStore& store);
 
+    // Key/settings configuration screen.
+    void showKeyBindings();
+
 private:
     static int colorId(PieceType type);
     static std::string formatTime(int seconds);
+    static std::string keyName(int key);
+    static std::string colorName(int color);
+    static bool keyMatches(int ch, int bound);
 
     void renderGame(const Game& game) const;
     void printCell(int id) const;
@@ -44,6 +51,8 @@ private:
 
     bool initialized_ = false;
     bool showNextPiece_ = true;
+    SettingsStore settingsStore_;
+    Settings settings_;
 };
 
 } // namespace tetris
