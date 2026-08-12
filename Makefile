@@ -8,7 +8,8 @@ CORE_SRCS := \
 	src/game/Piece.cpp \
 	src/game/Game.cpp \
 	src/game/Randomizer.cpp \
-	src/storage/ScoreStore.cpp
+	src/storage/ScoreStore.cpp \
+	src/storage/SettingsStore.cpp
 UI_SRCS   := src/ui/NcursesUi.cpp
 MAIN_SRC  := src/main.cpp
 TEST_SRC  := tests/test_main.cpp
