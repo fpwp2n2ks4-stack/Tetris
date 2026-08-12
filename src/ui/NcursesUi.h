@@ -13,6 +13,15 @@
 
 namespace tetris {
 
+// Contenu de rendu d'une cellule du plateau : couple de couleurs de fond et
+// glyphes de contour éventuels (caractères ACS).
+struct CellRender {
+    int pair = 0;     // identifiant du couple de couleurs ; 0 = cellule vide
+    int g0 = 0;       // glyphe de contour (moitié gauche) ; 0 = remplissage
+    int g1 = 0;       // glyphe de contour (moitié droite) ; 0 = remplissage
+    bool dim = false; // applique A_DIM au remplissage (pièce fantôme)
+};
+
 // Front-end ncurses : rend l'état du modèle et mappe le clavier vers les
 // actions du jeu. Ne contient aucune règle de jeu.
 class NcursesUi {
@@ -66,8 +75,8 @@ private:
     // Dessine une frame complète du jeu sur l'écran.
     void renderGame(const Game& game) const;
 
-    // Dessine une cellule du plateau selon son identifiant de couleur.
-    void printCell(int id) const;
+    // Dessine une cellule du plateau d'après son contenu de rendu.
+    void printCell(const CellRender& cell) const;
 
     // Dessine une ligne de la mini-grille (hold/next) d'une pièce.
     void printMiniLine(const std::optional<PieceType>& piece, int row) const;

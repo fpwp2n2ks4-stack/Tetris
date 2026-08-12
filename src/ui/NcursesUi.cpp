@@ -102,6 +102,8 @@ bool NcursesUi::init() {
         init_pair(kPairZ, COLOR_WHITE, COLOR_RED);
         init_pair(kPairJ, COLOR_WHITE, COLOR_BLUE);
         init_pair(kPairL, COLOR_BLACK, COLOR_WHITE);
+        // Fantôme : avant-plan noir (contour) sur la couleur de remplissage
+        // choisie par le joueur (blanc par défaut).
         init_pair(kPairGhost, COLOR_BLACK,
                   static_cast<short>(settings_.ghostColor & 0x7));
         init_pair(kPairFlash, COLOR_WHITE, COLOR_BLACK);
@@ -176,25 +178,41 @@ std::string NcursesUi::colorName(int color) {
     return names[static_cast<std::size_t>(color & 0x7)];
 }
 
-// Dessine une cellule du plateau selon son identifiant : vide (". "),
-// pièce fantôme (colorée et atténuée), ligne en cours de suppression
-// (clignotement) ou pièce normale.
-void NcursesUi::printCell(int id) const {
-    if (id == 0) {
+// Dessine une cellule du plateau : vide (". "), ligne en cours de
+// suppression (clignotement), remplissage simple (pièce normale ou fantôme)
+// ou cellule de contour avec glyphes ACS.
+void NcursesUi::printCell(const CellRender& cell) const {
+    if (cell.pair == 0) {
         printw(". ");
-    } else if (id == kPairGhost) {
-        attron(A_DIM | COLOR_PAIR(kPairGhost));
-        printw("  ");
-        attroff(A_DIM | COLOR_PAIR(kPairGhost));
-    } else if (id == kPairFlash) {
+        return;
+    }
+    if (cell.pair == kPairFlash) {
         attron(A_REVERSE | COLOR_PAIR(kPairFlash));
         printw("  ");
         attroff(A_REVERSE | COLOR_PAIR(kPairFlash));
-    } else {
-        attron(COLOR_PAIR(id));
-        printw("  ");
-        attroff(COLOR_PAIR(id));
+        return;
     }
+    if (cell.g0 == 0 && cell.g1 == 0) {
+        if (cell.dim) attron(A_DIM);
+        attron(COLOR_PAIR(cell.pair));
+        printw("  ");
+        attroff(COLOR_PAIR(cell.pair));
+        if (cell.dim) attroff(A_DIM);
+        return;
+    }
+    const int glyphs[2] = {cell.g0, cell.g1};
+    attron(COLOR_PAIR(cell.pair));
+    for (int i = 0; i < 2; ++i) {
+        if (glyphs[i] != 0) {
+            attroff(A_DIM); // contour net, non atténué
+            addch(static_cast<chtype>(glyphs[i]));
+        } else {
+            if (cell.dim) attron(A_DIM);
+            addch(' ');
+            if (cell.dim) attroff(A_DIM);
+        }
+    }
+    attroff(COLOR_PAIR(cell.pair));
 }
 
 // Dessine une rangée (sur 4) de la mini-grille d'une pièce du panneau
@@ -252,24 +270,51 @@ void NcursesUi::printSidePanel(const Game& game, int row) const {
 void NcursesUi::renderGame(const Game& game) const {
     clear();
 
-    std::array<std::array<int, kCols>, kRows> display{};
+    std::array<std::array<CellRender, kCols>, kRows> display{};
     const auto& board = game.board();
     for (int r = 0; r < kRows; ++r) {
         for (int c = 0; c < kCols; ++c) {
-            display[static_cast<std::size_t>(r)][static_cast<std::size_t>(c)] =
+            display[static_cast<std::size_t>(r)][static_cast<std::size_t>(c)].pair =
                 board[static_cast<std::size_t>(r)][static_cast<std::size_t>(c)];
         }
     }
 
     if (game.state() == GameState::Playing) {
+        // Pièce fantôme : remplissage coloré + contour noir autour de la forme.
         if (auto g = game.ghost()) {
+            std::vector<std::pair<int, int>> ghostCells;
             for (auto [dr, dc] : occupiedCells(g->type, g->rotation)) {
                 const int r = g->row + dr;
                 const int c = g->col + dc;
                 if (r >= 0 && r < kRows && c >= 0 && c < kCols &&
-                    display[static_cast<std::size_t>(r)][static_cast<std::size_t>(c)] == 0) {
-                    display[static_cast<std::size_t>(r)][static_cast<std::size_t>(c)] = kPairGhost;
+                    display[static_cast<std::size_t>(r)][static_cast<std::size_t>(c)].pair == 0) {
+                    display[static_cast<std::size_t>(r)][static_cast<std::size_t>(c)].pair = kPairGhost;
+                    display[static_cast<std::size_t>(r)][static_cast<std::size_t>(c)].dim = true;
+                    ghostCells.emplace_back(r, c);
                 }
+            }
+            // Une arête est exposée quand la cellule voisine n'appartient pas
+            // à la forme ; on la dessine avec les caractères de boîte ACS.
+            const auto isGhost = [&display](int r, int c) {
+                return r >= 0 && r < kRows && c >= 0 && c < kCols &&
+                       display[static_cast<std::size_t>(r)][static_cast<std::size_t>(c)].pair == kPairGhost;
+            };
+            for (auto [r, c] : ghostCells) {
+                const bool top = !isGhost(r - 1, c);
+                const bool bottom = !isGhost(r + 1, c);
+                const bool left = !isGhost(r, c - 1);
+                const bool right = !isGhost(r, c + 1);
+                CellRender& cell = display[static_cast<std::size_t>(r)][static_cast<std::size_t>(c)];
+                cell.g0 = (top && left)    ? static_cast<int>(ACS_ULCORNER)
+                          : (bottom && left) ? static_cast<int>(ACS_LLCORNER)
+                          : left             ? static_cast<int>(ACS_VLINE)
+                          : (top || bottom)  ? static_cast<int>(ACS_HLINE)
+                                             : 0;
+                cell.g1 = (top && right)    ? static_cast<int>(ACS_URCORNER)
+                          : (bottom && right) ? static_cast<int>(ACS_LRCORNER)
+                          : right             ? static_cast<int>(ACS_VLINE)
+                          : (top || bottom)   ? static_cast<int>(ACS_HLINE)
+                                              : 0;
             }
         }
         if (auto cur = game.current()) {
@@ -277,7 +322,11 @@ void NcursesUi::renderGame(const Game& game) const {
                 const int r = cur->row + dr;
                 const int c = cur->col + dc;
                 if (r >= 0 && r < kRows && c >= 0 && c < kCols) {
-                    display[static_cast<std::size_t>(r)][static_cast<std::size_t>(c)] = colorId(cur->type);
+                    CellRender& cell = display[static_cast<std::size_t>(r)][static_cast<std::size_t>(c)];
+                    cell.pair = colorId(cur->type);
+                    cell.dim = false;
+                    cell.g0 = 0;
+                    cell.g1 = 0;
                 }
             }
         }
@@ -286,7 +335,7 @@ void NcursesUi::renderGame(const Game& game) const {
     if (game.phase() == Phase::Clearing) {
         for (int r : game.clearingRows()) {
             for (int c = 0; c < kCols; ++c) {
-                display[static_cast<std::size_t>(r)][static_cast<std::size_t>(c)] = kPairFlash;
+                display[static_cast<std::size_t>(r)][static_cast<std::size_t>(c)].pair = kPairFlash;
             }
         }
     }

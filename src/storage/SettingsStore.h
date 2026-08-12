@@ -28,7 +28,8 @@ struct Settings {
     int rotate = 'k';
     int softDrop = 's';
     int hardDrop = ' ';
-    int ghostColor = kGhostColorBlack;
+    // Couleur de remplissage de la pièce fantôme ; le contour reste noir.
+    int ghostColor = kGhostColorWhite;
 };
 
 // Charge et enregistre le fichier de réglages (une paire "nom,valeur" par
